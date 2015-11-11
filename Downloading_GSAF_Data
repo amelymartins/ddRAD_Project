@@ -1,0 +1,129 @@
+################################################
+############# Logging to the TACC ##############
+################################################
+
+ssh username8@lonestar.tacc.utexas.edu
+
+
+############################################
+##### Downloading the data from GSAF #######
+############################################
+
+# To download data from GSAF through Lonestar you must incorporate the  BioITeam start-up script into your profile 
+# and then run the command "gsaf_download.sh" to download your data.
+# To incorporate de BioITeam start-up script, add the following line to your .profile file:
+
+cd
+nano .profile_user
+#paste this at the end
+. /corral-repl/utexas/BioITeam/bin/profile_ngs_course.bash
+# press ctl-O, Enter, ctl-X
+source .profile_user
+
+# NOTE that the TACC web server providing download functionality does NOT have a proper security certificate
+# so you must use "--no-check-certificate" with your wget command. To do this and download the data, you can use the
+# script "gsaf_download.sh" which takes the URL to the link entitled
+# "Access your data for job JAXXX from sequencing  run SAXXX here."
+# It fetches that web page and starts downloading the data files.
+# It then compares the md5sum #checksums of each  file to those computed by the GSAF when your data was created to
+# verify the integrity of the data.
+# Thus, to create the gsaf_download.sh:
+
+cd bin
+nano gsaf_download.sh
+#paste:
+
+#!/bin/bash
+wget -O files.html "$1"
+for file in `grep '^<!--gsafdata' files.html | grep '.gz' | awk '{print $2}'`
+do
+    echo $file
+    url=`cat files.html | grep -v json | grep -m 1 $file | awk 'BEGIN {FS="\""} {print $2}'`
+    echo "Downloading: $url"
+    wget -o $file.wget.log -O $file --no-check-certificate "$url"
+done
+grep '^<!--gsafdata' files.html | grep '.gz' | awk '{print $5"  "$2}' > md5.txt
+numfiles=`wc -l md5.txt | awk '{print $1}'`
+md5sum -c md5.txt
+if [ $? -eq 0 ]
+then
+    echo "Downloaded $numfiles files successfully."
+else
+    echo "Calculated md5sums do not match those provided by the GSAF.  Try requesting a new key and downloading again.  If that fails, contact the GSAF."
+fi
+
+# press ctl-O, Enter, ctl-X
+
+#To make the file  executable
+chmod a+x gsaf_download.sh
+
+#Create the folder where you will download the data.
+# Your data is downloaded in $SCRATCH, however you only keep files here if you are using them.
+# Otherwise keep your data in the $WORK directory
+cds
+mkdir folder_name
+gsaf_download.sh <link to GSAF job download>
+# e.g.: gsaf_download.sh "http://gsaf.s3.amazonaws.com/JA15191.SA15082.html?AWSAccessKeyId=AKIAJPRTJ4ZGKJIUA6XA&Expires=1440955025&Signature=k23lCfRK8q351MeIuLsH9zw007c%3D"
+
+# If necessary to move the files (from $scratch to $work for example), use:
+mv /path/to/source /path/to/dest
+
+#unzip the files
+# If demultiplexing with Stacks "process_radtags" it's not necessary
+# it can process .gz files using the '-i gzfastq' option
+# But it's useful unzip to take a look in the data
+
+gunzip JA15191Pool_CCGCGT_L006_R1_001.fastq.gz
+gunzip JA15191Pool_CCGCGT_L006_R2_001.fastq.gz
+#Now we have the fastq files, which are the sequencing data!
+
+#The data are fastq files, a typical NGS data format. They are similar to fasta 
+#files (familiar if you’ve ever worked with Sanger sequence data in the past) but 
+#with quality encoding to indicate the reliability of base-pair calls.
+#Look how it looks like
+
+head -4 JA15191Pool_CCGCGT_L006_R1_001.fastq
+
+#In a fastq file, there are four lines for each read. The first is the Illumina 
+#header which identifies the read. The second is the sequence. The third 
+#line is always a + character (in GSAF outputs) and the final line is the quality encoding
+
+# With more detail, the data looks like this:
+@HWI-D00289:185:C6FE5ANXX:6:1101:1429:2158 1:N:0:CCGCGT
+GCATGCATGCCACTGTAAGCACAGTGTTTTTTATAGTCACAGTGGAGGACTGATGTTGCATGTCCATTGAGTTTACTTTCAGGAAACTTTGTCCCTTAAGAACATATCCCAGGAAACCTGTTTTTC
++
+<BB<BFFFFFBF/FFFFB/FFFBFFFFBBFB<FFFFBFFB/FFFFFB<FBFFFFFFFF//<FFFFFF/FFF//B///FB<F//</<<FF/FFB//<<//BFFFBFBFF/<</7/FB<7<B/B/<//
+
+# Line 1: read identifier, which describes the machine, flowcell, cluster and grid coordinate.
+# Except for the barcode information, read identifiers will be identical for corresponding entries in the R1 and R2 fastq files.
+# A space separates the name from extra read information:
+#	- End number (1 for R1, 2 for R2)
+#	- Two qualtiy fields (N = not QC failed)
+# - Barcode
+#Line 2:   sequence reported by the machine.
+#Line 3: always '+' from GSAF (it can optionally include a sequence description)
+#Line 4: string of Ascii-encoded base quality scores, one character per base in the sequence. For each base, an integer quality score = -10 log(probabilty base is wrong) is calculated, then added to 33 to make a number in the Ascii #printable character range.
+
+#Counting the number of reads
+grep -c '^@' JA15191Pool_CCGCGT_L006_R1_001.fastq
+#Answer: 2256555
+
+cds
+mkdir ddRAD1JA15192 #for the job JA15192 - Sequencing Run SA15082
+gsaf_download.sh "http://gsaf.s3.amazonaws.com/JA15192.SA15082.html?AWSAccessKeyId=AKIAJPRTJ4ZGKJIUA6XA&Expires=1440954647&Signature=wk3r0N4LWR%2F6yMQ6Polfn%2FO6ftA%3D"
+#unzip the files
+gunzip JA15192Pool_TGCAAA_L006_R1_001.fastq.gz
+gunzip JA15192Pool_TGCAAA_L006_R2_001.fastq.gz
+
+grep -c '^@' JA15192Pool_TGCAAA_L006_R1_001.fastq
+#Answer: 7181787  # It makes sense because the job JA15192 is the 300pb size selection,
+#thus we expect it has much more sequences
+
+grep -c '^@'  JA15192Pool_TGCAAA_L006_R2_001.fastq
+#Answer: 7181787
+#If you want to look the files, don't use the 'cat' command alone, 
+#because the files are giant. Intead, we can use the 'less'  
+less JA15192Pool_TGCAAA_L006_R2_001.fastq
+
+# this command shows only what it can be seen in the window.
+# Use space bar to go down, <B> to go back, <Shift+G> to go to the end, <Q> for quit.
